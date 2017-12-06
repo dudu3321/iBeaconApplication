@@ -5,7 +5,7 @@ package com.example.user.ibeaconapplication;
  */
 
 public class RestService {
-    private static final String URL = "http://localhost:8086/api/";
+    private static final String URL = "http://192.168.42.135:8086/api/";
     private retrofit.RestAdapter restAdapter;
     private iBeaconService apiService;
 

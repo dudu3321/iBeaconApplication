@@ -50,6 +50,9 @@ public class MainActivity extends AppCompatActivity {
         peripheralTextView = (TextView) findViewById(R.id.PeripheralTextView);
         peripheralTextView.setMovementMethod(new ScrollingMovementMethod());
 
+        apiListTextView = (TextView) findViewById(R.id.textViewAPIList);
+        apiListTextView.setMovementMethod(new ScrollingMovementMethod());
+
         startScanningButton = (Button) findViewById(R.id.StartScanButton);
         startScanningButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -158,7 +161,13 @@ public class MainActivity extends AppCompatActivity {
         restService.getService().getAllBeacons(new Callback<List<iBeacon>>() {
             @Override
             public void success(List<iBeacon> beacons, Response response) {
-                apiListTextView.setText(beacons.toString());
+
+                String strBeacon = "";
+                for (iBeacon e : beacons
+                     ) {
+                    strBeacon += "Major" + beacons.indexOf(e) + "=" + e.Major.toString() + "\n";
+                }
+                apiListTextView.setText(strBeacon);
             }
 
             @Override
