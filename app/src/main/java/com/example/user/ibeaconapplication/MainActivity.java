@@ -37,7 +37,6 @@ public class MainActivity extends AppCompatActivity {
     TextView peripheralTextView;
     TextView apiListTextView;
 
-    RestService restService;
     private final static int REQUEST_ENABLE_BT = 1;
     private static final int PERMISSION_REQUEST_COARSE_LOCATION = 1;
 
@@ -45,7 +44,6 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        restService = new RestService();
 
         peripheralTextView = (TextView) findViewById(R.id.PeripheralTextView);
         peripheralTextView.setMovementMethod(new ScrollingMovementMethod());
@@ -71,7 +69,7 @@ public class MainActivity extends AppCompatActivity {
         getAPIListButton = (Button) findViewById(R.id.getAPIListButton);
         getAPIListButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                getAPIList();
+
             }
         });
 
@@ -157,23 +155,4 @@ public class MainActivity extends AppCompatActivity {
         btScanner.stopScan(leScanCallback);
     }
 
-    private void getAPIList(){
-        restService.getService().getAllBeacons(new Callback<List<iBeacon>>() {
-            @Override
-            public void success(List<iBeacon> beacons, Response response) {
-
-                String strBeacon = "";
-                for (iBeacon e : beacons
-                     ) {
-                    strBeacon += "Major" + beacons.indexOf(e) + "=" + e.Major.toString() + "\n";
-                }
-                apiListTextView.setText(strBeacon);
-            }
-
-            @Override
-            public void failure(RetrofitError error) {
-                Toast.makeText(MainActivity.this, error.getMessage().toString(), Toast.LENGTH_LONG).show();
-            }
-        });
-    }
 }
