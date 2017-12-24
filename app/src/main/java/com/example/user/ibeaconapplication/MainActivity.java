@@ -22,6 +22,10 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 
+import com.google.gson.JsonObject;
+
+import org.json.JSONObject;
+
 import retrofit.Callback;
 import retrofit.RetrofitError;
 import retrofit.client.Response;
@@ -34,8 +38,10 @@ public class MainActivity extends AppCompatActivity {
     Button startScanningButton;
     Button stopScanningButton;
     Button getAPIListButton;
+    Button getOneBeaconButton;
     TextView peripheralTextView;
     TextView apiListTextView;
+    RestService restService;
 
     private final static int REQUEST_ENABLE_BT = 1;
     private static final int PERMISSION_REQUEST_COARSE_LOCATION = 1;
@@ -44,6 +50,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        restService = new RestService();
 
         peripheralTextView = (TextView) findViewById(R.id.PeripheralTextView);
         peripheralTextView.setMovementMethod(new ScrollingMovementMethod());
@@ -66,10 +73,17 @@ public class MainActivity extends AppCompatActivity {
         });
         stopScanningButton.setVisibility(View.INVISIBLE);
 
+        getOneBeaconButton = (Button) findViewById(R.id.buttonOneBeacon);
+        getOneBeaconButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                GetOneBeacon();
+            }
+        });
+
         getAPIListButton = (Button) findViewById(R.id.getAPIListButton);
         getAPIListButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-
+                GetBeaconList();
             }
         });
 
@@ -153,6 +167,41 @@ public class MainActivity extends AppCompatActivity {
         startScanningButton.setVisibility(View.VISIBLE);
         stopScanningButton.setVisibility(View.INVISIBLE);
         btScanner.stopScan(leScanCallback);
+    }
+
+    public void GetBeaconList(){
+        restService.getService().GetAllBeacons(new Callback<List<iBeacon>>() {
+            @Override
+            public void success(List<iBeacon> beacons, Response response) {
+                String str = "";
+                for(iBeacon e : beacons)
+                    str += "Major : " + e.Major + ", APIUrl : " + e.APIUrl + "\n";
+                    apiListTextView.setText(str);
+            }
+
+            @Override
+            public void failure(RetrofitError error) {
+                //Toast.makeText(MainActivity.this, error.getMessage().toString(), Toast.LENGTH_LONG).show();
+            }
+        });
+    }
+
+    public void GetOneBeacon(){
+        iBeacon o = new iBeacon();
+        o.Minor = "1";
+        o.UUID = "1";
+        o.Major = "3";
+        restService.getService().GetBeaconInfo( o, new Callback<iBeacon>() {
+            @Override
+            public void success(iBeacon beacon, Response response) {
+                apiListTextView.setText("Major : " + beacon.Major + ", APIUrl : " + beacon.APIUrl + "\n");
+            }
+
+            @Override
+            public void failure(RetrofitError error) {
+                //Toast.makeText(MainActivity.this, error.getMessage().toString(), Toast.LENGTH_LONG).show();
+            }
+        });
     }
 
 }
