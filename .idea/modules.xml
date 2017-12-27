@@ -3,9 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/app/app.iml" filepath="$PROJECT_DIR$/app/app.iml" />
-      <module fileurl="file://C:\Project\Github\Java\iBeaconApplication\app\app.iml" filepath="C:\Project\Github\Java\iBeaconApplication\app\app.iml" />
       <module fileurl="file://$PROJECT_DIR$/iBeaconApplication.iml" filepath="$PROJECT_DIR$/iBeaconApplication.iml" />
-      <module fileurl="file://C:\Project\Github\Java\iBeaconApplication\iBeaconApplication.iml" filepath="C:\Project\Github\Java\iBeaconApplication\iBeaconApplication.iml" />
     </modules>
   </component>
 </project>

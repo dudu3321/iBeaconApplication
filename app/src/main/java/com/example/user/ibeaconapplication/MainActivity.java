@@ -5,6 +5,7 @@ import java.util.List;
 import android.Manifest;
 import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
@@ -13,18 +14,15 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.os.ParcelUuid;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.text.method.ScrollingMovementMethod;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
-
-
-import com.google.gson.JsonObject;
-
-import org.json.JSONObject;
 
 import retrofit.Callback;
 import retrofit.RetrofitError;
@@ -39,10 +37,13 @@ public class MainActivity extends AppCompatActivity {
     Button stopScanningButton;
     Button getAPIListButton;
     Button getOneBeaconButton;
+    Button startService;
+    Button stopService;
+    Button serviceTrigger;
     TextView peripheralTextView;
     TextView apiListTextView;
     RestService restService;
-
+    BackgroundService backgroundService;
     private final static int REQUEST_ENABLE_BT = 1;
     private static final int PERMISSION_REQUEST_COARSE_LOCATION = 1;
 
@@ -51,7 +52,9 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         restService = new RestService();
+        backgroundService = new BackgroundService();
 
+        //region Buttion Onclick Event
         peripheralTextView = (TextView) findViewById(R.id.PeripheralTextView);
         peripheralTextView.setMovementMethod(new ScrollingMovementMethod());
 
@@ -84,8 +87,36 @@ public class MainActivity extends AppCompatActivity {
         getAPIListButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 GetBeaconList();
+                Log.d("Debug Log", "getAPIListButton");
             }
         });
+
+        startService = (Button) findViewById(R.id.buttonStartService);
+        startService.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                Intent intent = new Intent(MainActivity.this, BackgroundService.class);
+                startService(intent);
+            }
+        });
+
+        stopService = (Button) findViewById(R.id.buttonStopService);
+        stopService.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                Intent intent = new Intent(MainActivity.this, BackgroundService.class);
+                stopService(intent);
+            }
+        });
+
+        serviceTrigger = (Button) findViewById(R.id.buttonServiceTrigger);
+        serviceTrigger.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                Log.d("Debug Log", "buttonServiceTrigger");
+                backgroundService.callFlag = true;
+            }
+        });
+        //endregion
+
+        //region Bluetooth Auth
 
         btManager = (BluetoothManager)getSystemService(Context.BLUETOOTH_SERVICE);
         btAdapter = btManager.getAdapter();
@@ -111,25 +142,33 @@ public class MainActivity extends AppCompatActivity {
             });
             builder.show();
         }
+
+        //endregion
     }
 
     // Device scan callback.
     private ScanCallback leScanCallback = new ScanCallback() {
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
-            peripheralTextView.append("Device Name: " + result.getDevice().getName() + " rssi: " + result.getRssi() + "\n");
-
+            boolean deviceFound = false;
+            BluetoothDevice device = result.getDevice();
+            peripheralTextView.append("Device Name: " + device.getName() + " rssi: " + result.getRssi() + "\n");
+            peripheralTextView.append("Device UUID: " + device.getUuids()  + "\n");
             // auto scroll for text view
             final int scrollAmount = peripheralTextView.getLayout().getLineTop(peripheralTextView.getLineCount()) - peripheralTextView.getHeight();
             // if there is no need to scroll, scrollAmount will be <=0
             if (scrollAmount > 0)
                 peripheralTextView.scrollTo(0, scrollAmount);
         }
+
+        @Override
+        public void onScanFailed(int errorCode) {
+            super.onScanFailed(errorCode);
+        }
     };
 
     @Override
-    public void onRequestPermissionsResult(int requestCode,
-                                           String permissions[], int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
         switch (requestCode) {
             case PERMISSION_REQUEST_COARSE_LOCATION: {
                 if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
@@ -188,9 +227,9 @@ public class MainActivity extends AppCompatActivity {
 
     public void GetOneBeacon(){
         iBeacon o = new iBeacon();
-        o.Minor = "1";
+        o.Minor = "3";
         o.UUID = "1";
-        o.Major = "3";
+        o.Major = "1";
         restService.getService().GetBeaconInfo( o, new Callback<iBeacon>() {
             @Override
             public void success(iBeacon beacon, Response response) {
