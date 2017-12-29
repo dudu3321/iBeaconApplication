@@ -1,20 +1,14 @@
 package com.example.user.ibeaconapplication;
 
+import java.util.Collection;
 import java.util.List;
 
 import android.Manifest;
 import android.app.AlertDialog;
-import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothManager;
-import android.bluetooth.le.BluetoothLeScanner;
-import android.bluetooth.le.ScanCallback;
-import android.bluetooth.le.ScanResult;
-import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.os.ParcelUuid;
+import android.os.RemoteException;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.text.method.ScrollingMovementMethod;
@@ -22,17 +16,14 @@ import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
-import android.widget.Toast;
+import org.altbeacon.beacon.*;
 
 import retrofit.Callback;
 import retrofit.RetrofitError;
 import retrofit.client.Response;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements BeaconConsumer {
 
-    BluetoothManager btManager;
-    BluetoothAdapter btAdapter;
-    BluetoothLeScanner btScanner;
     Button startScanningButton;
     Button stopScanningButton;
     Button getAPIListButton;
@@ -44,8 +35,9 @@ public class MainActivity extends AppCompatActivity {
     TextView apiListTextView;
     RestService restService;
     BackgroundService backgroundService;
-    private final static int REQUEST_ENABLE_BT = 1;
     private static final int PERMISSION_REQUEST_COARSE_LOCATION = 1;
+    public static final String TAG = "BeaconsEverywhere";
+    private BeaconManager beaconManager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -64,14 +56,18 @@ public class MainActivity extends AppCompatActivity {
         startScanningButton = (Button) findViewById(R.id.StartScanButton);
         startScanningButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                startScanning();
+                startScanningButton.setVisibility(View.INVISIBLE);
+                stopScanningButton.setVisibility(View.VISIBLE);
+                beaconManager.bind(MainActivity.this);
             }
         });
 
         stopScanningButton = (Button) findViewById(R.id.StopScanButton);
         stopScanningButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                stopScanning();
+                beaconManager.unbind(MainActivity.this);
+                startScanningButton.setVisibility(View.VISIBLE);
+                stopScanningButton.setVisibility(View.INVISIBLE);
             }
         });
         stopScanningButton.setVisibility(View.INVISIBLE);
@@ -118,15 +114,11 @@ public class MainActivity extends AppCompatActivity {
 
         //region Bluetooth Auth
 
-        btManager = (BluetoothManager)getSystemService(Context.BLUETOOTH_SERVICE);
-        btAdapter = btManager.getAdapter();
-        btScanner = btAdapter.getBluetoothLeScanner();
 
+        beaconManager = BeaconManager.getInstanceForApplication(this);
+        beaconManager.getBeaconParsers().add(new BeaconParser()
+                .setBeaconLayout("m:2-3=0215,i:4-19,i:20-21,i:22-23,p:24-24"));
 
-        if (btAdapter != null && !btAdapter.isEnabled()) {
-            Intent enableIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-            startActivityForResult(enableIntent,REQUEST_ENABLE_BT);
-        }
 
         // Make sure we have access coarse location enabled, if not, prompt the user to enable it
         if (this.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -146,26 +138,65 @@ public class MainActivity extends AppCompatActivity {
         //endregion
     }
 
-    // Device scan callback.
-    private ScanCallback leScanCallback = new ScanCallback() {
-        @Override
-        public void onScanResult(int callbackType, ScanResult result) {
-            boolean deviceFound = false;
-            BluetoothDevice device = result.getDevice();
-            peripheralTextView.append("Device Name: " + device.getName() + " rssi: " + result.getRssi() + "\n");
-            peripheralTextView.append("Device UUID: " + device.getUuids()  + "\n");
-            // auto scroll for text view
-            final int scrollAmount = peripheralTextView.getLayout().getLineTop(peripheralTextView.getLineCount()) - peripheralTextView.getHeight();
-            // if there is no need to scroll, scrollAmount will be <=0
-            if (scrollAmount > 0)
-                peripheralTextView.scrollTo(0, scrollAmount);
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        beaconManager.unbind(this);
+    }
+
+    @Override
+    public void onBeaconServiceConnect() {
+        final Region region = new Region("myBeaons", null, null, null);
+
+        beaconManager.setMonitorNotifier(new MonitorNotifier() {
+            @Override
+            public void didEnterRegion(Region region) {
+                try {
+                    Log.d(TAG, "didEnterRegion");
+                    beaconManager.startRangingBeaconsInRegion(region);
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            @Override
+            public void didExitRegion(Region region) {
+                try {
+                    Log.d(TAG, "didExitRegion");
+                    beaconManager.stopRangingBeaconsInRegion(region);
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            @Override
+            public void didDetermineStateForRegion(int i, Region region) {
+
+            }
+        });
+
+        beaconManager.setRangeNotifier(new RangeNotifier() {
+            @Override
+            public void didRangeBeaconsInRegion(Collection<Beacon> beacons, Region region) {
+                for(final Beacon oneBeacon : beacons) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            peripheralTextView.append( "uuid: " + oneBeacon.getId1() + "/" + oneBeacon.getId2() + "/" + oneBeacon.getId3() + "/n");
+                        }
+                    });
+                }
+            }
+        });
+
+        try {
+            beaconManager.startMonitoringBeaconsInRegion(region);
+        } catch (RemoteException e) {
+            e.printStackTrace();
         }
 
-        @Override
-        public void onScanFailed(int errorCode) {
-            super.onScanFailed(errorCode);
-        }
-    };
+    }
+
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
@@ -192,21 +223,8 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    public void startScanning() {
-        System.out.println("start scanning");
-        peripheralTextView.setText("");
-        startScanningButton.setVisibility(View.INVISIBLE);
-        stopScanningButton.setVisibility(View.VISIBLE);
-        btScanner.startScan(leScanCallback);
-    }
-
-    public void stopScanning() {
-        System.out.println("stopping scanning");
-        peripheralTextView.append("Stopped Scanning");
-        startScanningButton.setVisibility(View.VISIBLE);
-        stopScanningButton.setVisibility(View.INVISIBLE);
-        btScanner.stopScan(leScanCallback);
-    }
+    public void StartScanBeacon(){}
+    public void StopScanBeacon(){}
 
     public void GetBeaconList(){
         restService.getService().GetAllBeacons(new Callback<List<iBeacon>>() {
@@ -242,5 +260,4 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-
 }
