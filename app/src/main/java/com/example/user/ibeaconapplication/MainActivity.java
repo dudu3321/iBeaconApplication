@@ -1,29 +1,42 @@
 package com.example.user.ibeaconapplication;
 
-import java.util.Collection;
 import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
 
 import android.Manifest;
 import android.app.AlertDialog;
+import android.bluetooth.BluetoothAdapter;
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
-import android.os.RemoteException;
+import android.os.IBinder;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.text.method.ScrollingMovementMethod;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
-import org.altbeacon.beacon.*;
+import android.widget.Toast;
+
+import com.example.user.ibeaconapplication.models.iBeacon;
+import com.example.user.ibeaconapplication.services.BackgroundService.BackgroundService;
+import com.example.user.ibeaconapplication.services.WebAPIService.RestService;
+import com.example.user.ibeaconapplication.services.iBeaconService.iBeaconService;
+
+import org.altbeacon.beacon.Beacon;
 
 import retrofit.Callback;
 import retrofit.RetrofitError;
 import retrofit.client.Response;
 
-public class MainActivity extends AppCompatActivity implements BeaconConsumer {
+public class MainActivity extends AppCompatActivity {
 
+    private static BluetoothAdapter mBluetoothAdapter = null;
+    private final int REQUEST_ENABLE_BT=1;
     Button startScanningButton;
     Button stopScanningButton;
     Button getAPIListButton;
@@ -34,199 +47,138 @@ public class MainActivity extends AppCompatActivity implements BeaconConsumer {
     TextView peripheralTextView;
     TextView apiListTextView;
     RestService restService;
-    BackgroundService backgroundService;
+
+    BackgroundService mService;
+    Boolean mBound;
+    iBeaconService ibeaconService;
     private static final int PERMISSION_REQUEST_COARSE_LOCATION = 1;
-    public static final String TAG = "BeaconsEverywhere";
-    private BeaconManager beaconManager;
+
+    Timer timer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         restService = new RestService();
-        backgroundService = new BackgroundService();
+        ibeaconService = (iBeaconService)getApplication();
 
         //region Buttion Onclick Event
-        peripheralTextView = (TextView) findViewById(R.id.PeripheralTextView);
+        peripheralTextView = findViewById(R.id.PeripheralTextView);
         peripheralTextView.setMovementMethod(new ScrollingMovementMethod());
 
-        apiListTextView = (TextView) findViewById(R.id.textViewAPIList);
+        apiListTextView = findViewById(R.id.textViewAPIList);
         apiListTextView.setMovementMethod(new ScrollingMovementMethod());
 
-        startScanningButton = (Button) findViewById(R.id.StartScanButton);
+        startScanningButton = findViewById(R.id.StartScanButton);
         startScanningButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                startScanningButton.setVisibility(View.INVISIBLE);
-                stopScanningButton.setVisibility(View.VISIBLE);
-                beaconManager.bind(MainActivity.this);
+                StartScanBeacon();
             }
         });
 
-        stopScanningButton = (Button) findViewById(R.id.StopScanButton);
+        stopScanningButton = findViewById(R.id.StopScanButton);
         stopScanningButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                beaconManager.unbind(MainActivity.this);
-                startScanningButton.setVisibility(View.VISIBLE);
-                stopScanningButton.setVisibility(View.INVISIBLE);
+                StopScanBeacon();
             }
         });
         stopScanningButton.setVisibility(View.INVISIBLE);
 
-        getOneBeaconButton = (Button) findViewById(R.id.buttonOneBeacon);
+        getOneBeaconButton = findViewById(R.id.buttonOneBeacon);
         getOneBeaconButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 GetOneBeacon();
             }
         });
 
-        getAPIListButton = (Button) findViewById(R.id.getAPIListButton);
+        getAPIListButton = findViewById(R.id.getAPIListButton);
         getAPIListButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 GetBeaconList();
-                Log.d("Debug Log", "getAPIListButton");
             }
         });
 
-        startService = (Button) findViewById(R.id.buttonStartService);
+        startService = findViewById(R.id.buttonStartService);
         startService.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
+                stopService.setVisibility(View.VISIBLE);
+                startService.setVisibility(View.INVISIBLE);
                 Intent intent = new Intent(MainActivity.this, BackgroundService.class);
-                startService(intent);
+                bindService(intent, mConnection, Context.BIND_AUTO_CREATE);
+                mBound = true;
             }
         });
 
-        stopService = (Button) findViewById(R.id.buttonStopService);
+        stopService = findViewById(R.id.buttonStopService);
         stopService.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
+                startService.setVisibility(View.VISIBLE);
+                stopService.setVisibility(View.INVISIBLE);
                 Intent intent = new Intent(MainActivity.this, BackgroundService.class);
                 stopService(intent);
+                mBound = false;
             }
         });
 
-        serviceTrigger = (Button) findViewById(R.id.buttonServiceTrigger);
+        serviceTrigger = findViewById(R.id.buttonServiceTrigger);
         serviceTrigger.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                Log.d("Debug Log", "buttonServiceTrigger");
-                backgroundService.callFlag = true;
+                if(mBound){
+                   mService.SetTrigger();
+                }
             }
         });
         //endregion
 
-        //region Bluetooth Auth
+        // region bluetooth auth
+        mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+        if (mBluetoothAdapter == null) {
+            // 如果裝置不支援藍芽
+            Toast.makeText(this, "Device doesn't support bluetooth", Toast.LENGTH_SHORT).show();
+            return;
 
-
-        beaconManager = BeaconManager.getInstanceForApplication(this);
-        beaconManager.getBeaconParsers().add(new BeaconParser()
-                .setBeaconLayout("m:2-3=0215,i:4-19,i:20-21,i:22-23,p:24-24"));
-
-
-        // Make sure we have access coarse location enabled, if not, prompt the user to enable it
-        if (this.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            final AlertDialog.Builder builder = new AlertDialog.Builder(this);
-            builder.setTitle("This app needs location access");
-            builder.setMessage("Please grant location access so this app can detect peripherals.");
-            builder.setPositiveButton(android.R.string.ok, null);
-            builder.setOnDismissListener(new DialogInterface.OnDismissListener() {
-                @Override
-                public void onDismiss(DialogInterface dialog) {
-                    requestPermissions(new String[]{Manifest.permission.ACCESS_COARSE_LOCATION}, PERMISSION_REQUEST_COARSE_LOCATION);
-                }
-            });
-            builder.show();
         }
-
+        // 如果藍芽沒有開啟
+        if (!mBluetoothAdapter.isEnabled()) {
+            // 發出一個intent去開啟藍芽，
+            Intent mIntentOpenBT = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            startActivityForResult(mIntentOpenBT, REQUEST_ENABLE_BT);
+        }
         //endregion
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        beaconManager.unbind(this);
     }
 
     @Override
-    public void onBeaconServiceConnect() {
-        final Region region = new Region("myBeaons", null, null, null);
-
-        beaconManager.setMonitorNotifier(new MonitorNotifier() {
-            @Override
-            public void didEnterRegion(Region region) {
-                try {
-                    Log.d(TAG, "didEnterRegion");
-                    beaconManager.startRangingBeaconsInRegion(region);
-                } catch (RemoteException e) {
-                    e.printStackTrace();
-                }
-            }
-
-            @Override
-            public void didExitRegion(Region region) {
-                try {
-                    Log.d(TAG, "didExitRegion");
-                    beaconManager.stopRangingBeaconsInRegion(region);
-                } catch (RemoteException e) {
-                    e.printStackTrace();
-                }
-            }
-
-            @Override
-            public void didDetermineStateForRegion(int i, Region region) {
-
-            }
-        });
-
-        beaconManager.setRangeNotifier(new RangeNotifier() {
-            @Override
-            public void didRangeBeaconsInRegion(Collection<Beacon> beacons, Region region) {
-                for(final Beacon oneBeacon : beacons) {
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            peripheralTextView.append( "uuid: " + oneBeacon.getId1() + "/" + oneBeacon.getId2() + "/" + oneBeacon.getId3() + "/n");
-                        }
-                    });
-                }
-            }
-        });
-
-        try {
-            beaconManager.startMonitoringBeaconsInRegion(region);
-        } catch (RemoteException e) {
-            e.printStackTrace();
-        }
-
-    }
-
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
-        switch (requestCode) {
-            case PERMISSION_REQUEST_COARSE_LOCATION: {
-                if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    System.out.println("coarse location permission granted");
-                } else {
-                    final AlertDialog.Builder builder = new AlertDialog.Builder(this);
-                    builder.setTitle("Functionality limited");
-                    builder.setMessage("Since location access has not been granted, this app will not be able to discover beacons when in the background.");
-                    builder.setPositiveButton(android.R.string.ok, null);
-                    builder.setOnDismissListener(new DialogInterface.OnDismissListener() {
-
-                        @Override
-                        public void onDismiss(DialogInterface dialog) {
-                        }
-
-                    });
-                    builder.show();
-                }
-                return;
-            }
+    protected void onStop() {
+        super.onStop();
+        // Unbind from the service
+        if (mBound) {
+            unbindService(mConnection);
+            mBound = false;
         }
     }
 
-    public void StartScanBeacon(){}
-    public void StopScanBeacon(){}
+    protected void StartScanBeacon(){
+        startScanningButton.setVisibility(View.INVISIBLE);
+        stopScanningButton.setVisibility(View.VISIBLE);
+        ibeaconService.StartScan();
+        timer = new Timer(true);
+        timer.schedule(new MyTimerTask(), 1000, 1000);
 
-    public void GetBeaconList(){
+    }
+
+    protected void StopScanBeacon(){
+        startScanningButton.setVisibility(View.VISIBLE);
+        stopScanningButton.setVisibility(View.INVISIBLE);
+        ibeaconService.StopScan();
+        timer.cancel();
+    }
+
+    protected void GetBeaconList(){
         restService.getService().GetAllBeacons(new Callback<List<iBeacon>>() {
             @Override
             public void success(List<iBeacon> beacons, Response response) {
@@ -243,11 +195,8 @@ public class MainActivity extends AppCompatActivity implements BeaconConsumer {
         });
     }
 
-    public void GetOneBeacon(){
-        iBeacon o = new iBeacon();
-        o.Minor = "3";
-        o.UUID = "1";
-        o.Major = "1";
+    protected void GetOneBeacon(){
+        iBeacon o = new iBeacon("1", "1", "3");
         restService.getService().GetBeaconInfo( o, new Callback<iBeacon>() {
             @Override
             public void success(iBeacon beacon, Response response) {
@@ -260,4 +209,33 @@ public class MainActivity extends AppCompatActivity implements BeaconConsumer {
             }
         });
     }
+
+    private ServiceConnection mConnection = new ServiceConnection() {
+
+        @Override
+        public void onServiceConnected(ComponentName className, IBinder service) {
+            // We've bound to LocalService, cast the IBinder and get LocalService instance
+            BackgroundService.bgServiceBinder binder = (BackgroundService.bgServiceBinder) service;
+            mService = binder.getService();
+            mBound = true;
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName arg0) {
+            mBound = false;
+        }
+    };
+
+    public class MyTimerTask extends TimerTask
+    {
+        public void run()
+        {
+            Beacon beaconNow = ibeaconService.GetBeaconNearbyNow();
+            if(beaconNow!= null){
+                String uuid = beaconNow.getId1().toString();
+                String major = beaconNow.getId2().toString();
+                String minor = beaconNow.getId3().toString();
+            }
+        }
+    };
 }
